@@ -208,18 +208,10 @@ void slog_write_escape(const char *str) {
 	slog_buffer_write("\"");
 }
 
-void slog_write_time(struct slog_node *node) {
-	assert(node->type == SLOG_TYPE_TIME);
-
-	struct tm *t = localtime(&node->value.time.tv_sec);
-
-	// YYYY-MM-DD HH:MM:SS.mmm
-	// 2025-11-16 11:15:25.123
-
-	slog_buffer_write("\"time\": \"%04d-%02d-%02d %02d:%02d:%02d.%03ld\"",
-			  t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
-			  t->tm_hour, t->tm_min, t->tm_sec,
-			  node->value.time.tv_nsec / 1000000);
+void slog_write_time(struct timespec *ts) {
+	// unix timestamp in seconds.microseconds format
+	// e.g. 1763456783.899468
+	slog_buffer_write("\"%ld.%06lu\"", ts->tv_sec, ts->tv_nsec / 1000);
 }
 
 void slog_write_node(struct slog_node *node) {
@@ -253,7 +245,7 @@ void slog_write_node(struct slog_node *node) {
 			slog_write_node(node->value.object);
 			break;
 		case SLOG_TYPE_TIME:
-			slog_write_time(node);
+			slog_write_time(&node->value.time);
 			break;
 		default:
 			break;
@@ -285,7 +277,7 @@ static void slog_log_main(const char *file, const int line, const char *func,
 		slog_node_create(SLOG_TYPE_STRING, "func", func),
 		slog_node_create(SLOG_TYPE_STRING, "level", level),
 		slog_node_create(SLOG_TYPE_STRING, "msg", msg),
-		slog_node_create(SLOG_TYPE_TIME, NULL), extra, NULL);
+		slog_node_create(SLOG_TYPE_TIME, "time"), extra, NULL);
 
 	slog_buffer_index = 0;
 	slog_output_buffer[0] = '\0';

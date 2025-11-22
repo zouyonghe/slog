@@ -3,6 +3,11 @@
 
 #include "slog.h"
 
+void eprintf(const char *str) {
+	// lock?
+	fprintf(stderr, "%s\n", str);
+}
+
 int main() {
 	const char *name = "qaqland";
 	const char *email = "qaq@qaq.land";
@@ -27,6 +32,9 @@ int main() {
 	SLOG(SLOG_INFO, "we have array now",
 	     SLOG_ARRAY("brrby", SLOG_INT(NULL, 2), SLOG_INT(NULL, 1),
 			SLOG_INT("striped key", 3)));
+
+	SLOG_SET_HANDLER(eprintf);
+	SLOG(SLOG_DEBUG, "custom output handler");
 
 #define MYLOG(MSG, ...)                                                        \
 	SLOG(SLOG_INFO, MSG, SLOG_INT("user_id", id), ##__VA_ARGS__)

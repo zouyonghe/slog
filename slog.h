@@ -89,9 +89,19 @@ void slog_node_free(struct slog_node *node) {
 	free(node);
 }
 
+typedef void (*slog_output_handler_t)(const char *);
+
+static thread_local slog_output_handler_t slog_output_handler;
+
+void SLOG_SET_HANDLER(slog_output_handler_t cb) {
+	assert(cb);
+	slog_output_handler = cb;
+}
+
 void SLOG_FREE(void) {
 	slog_node_free(slog_node_thread_local);
 	slog_node_thread_local = NULL;
+	slog_output_handler = NULL;
 }
 
 const char *slog_buffer_write(const char *fmt, ...) {
@@ -294,10 +304,12 @@ static void slog_log_main(const char *file, const int line, const char *func,
 	slog_write_node(root);
 	const char *buffer = slog_buffer_write(NULL);
 
-	// TODO
-	// use write or custom handler, e.g. with lock
-	fprintf(stdout, "%s\n", buffer);
-	fflush(stdout);
+	if (slog_output_handler) {
+		slog_output_handler(buffer);
+	} else {
+		fprintf(stdout, "%s\n", buffer);
+		fflush(stdout);
+	}
 }
 
 #define SLOG_BOOL(K, V) slog_node_create(SLOG_TYPE_BOOL, K, V)

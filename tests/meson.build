@@ -1,4 +1,7 @@
-test_sources = ['test_type.c']
+test_sources = [
+    'test_type.c',
+    'test_buffer.c',
+]
 
 test_c_args = [
     '-O0',

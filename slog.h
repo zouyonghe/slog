@@ -54,7 +54,7 @@ struct slog_node {
 	struct slog_node *next;
 };
 
-const struct slog_node slog_node_default;
+static const struct slog_node slog_node_default = {0};
 
 static thread_local struct slog_node *slog_node_thread_local = NULL;
 
@@ -100,28 +100,71 @@ void SLOG_FREE(void) {
 	slog_node_free(slog_node_thread_local);
 	slog_node_thread_local = NULL;
 	slog_output_handler = NULL;
+	free(slog_buffer.data);
+	slog_buffer.data = NULL;
+	slog_buffer.size = 0;
+	slog_buffer.index = 0;
+}
+
+struct slog_buffer {
+	char *data;
+	size_t size;
+	size_t index;
+};
+
+static thread_local struct slog_buffer slog_buffer = {0};
+
+static bool slog_buffer_reserve(size_t additional) {
+	const size_t needed = slog_buffer.index + additional + 1;
+	if (needed <= slog_buffer.size) {
+		return true;
+	}
+
+	size_t new_size = slog_buffer.size ? slog_buffer.size : PIPE_BUF;
+	while (new_size < needed) {
+		new_size *= 2;
+	}
+
+	char *new_data = realloc(slog_buffer.data, new_size);
+	if (!new_data) {
+		fprintf(stderr, "Buffer allocation failed\n");
+		return false;
+	}
+
+	slog_buffer.data = new_data;
+	slog_buffer.size = new_size;
+	return true;
 }
 
 const char *slog_buffer_write(const char *fmt, ...) {
-	static thread_local char buffer[PIPE_BUF] = {0};
-	static thread_local size_t index = 0; // without \0
 	if (!fmt) {
-		index = 0;
+		if (!slog_buffer.data && !slog_buffer_reserve(0)) {
+			return NULL;
+		}
+		slog_buffer.data[slog_buffer.index] = '\0';
+		const char *buffer = slog_buffer.data;
+		slog_buffer.index = 0;
 		return buffer;
 	}
 
-	if (index + 1 >= sizeof(buffer)) {
-		fprintf(stderr, "Buffer full\n");
+	va_list args;
+	va_start(args, fmt);
+	int len = vsnprintf(NULL, 0, fmt, args);
+	va_end(args);
+	if (len < 0) {
 		return NULL;
 	}
 
-	va_list args;
-	va_start(args, fmt); // vprintf(fmt, args);
-	int len = vsnprintf(buffer + index, sizeof(buffer) - index, fmt, args);
-	va_end(args);
-	if (len > 0) {
-		index += len;
+	if (!slog_buffer_reserve((size_t)len)) {
+		return NULL;
 	}
+
+	va_start(args, fmt);
+	vsnprintf(slog_buffer.data + slog_buffer.index,
+		  slog_buffer.size - slog_buffer.index, fmt, args);
+	va_end(args);
+
+	slog_buffer.index += (size_t)len;
 	return NULL;
 }
 
@@ -300,9 +343,16 @@ void slog_log_main(const char *file, const int line, const char *func,
 		msg_node->next = extra_head;
 	}
 
-	slog_buffer_write(NULL);
+	if (!slog_buffer_write(NULL)) {
+		fprintf(stderr, "Buffer reset failed\n");
+		return;
+	}
 	slog_write_node(root);
 	const char *buffer = slog_buffer_write(NULL);
+	if (!buffer) {
+		fprintf(stderr, "Buffer flush failed\n");
+		return;
+	}
 
 	if (slog_output_handler) {
 		slog_output_handler(buffer);
@@ -316,10 +366,9 @@ void slog_log_main(const char *file, const int line, const char *func,
 #define SLOG_FLOAT(K, V) slog_node_create(SLOG_TYPE_FLOAT, K, V)
 #define SLOG_STRING(K, V) slog_node_create(SLOG_TYPE_STRING, K, V)
 #define SLOG_INT(K, V) slog_node_create(SLOG_TYPE_INT, K, V)
-#define SLOG_ARRAY(K, ...)                                                     \
-	slog_node_create(SLOG_TYPE_ARRAY, K __VA_OPT__(, ) __VA_ARGS__, NULL)
+#define SLOG_ARRAY(K, ...) slog_node_create(SLOG_TYPE_ARRAY, K, ##__VA_ARGS__, NULL)
 #define SLOG_OBJECT(K, ...)                                                    \
-	slog_node_create(SLOG_TYPE_OBJECT, K __VA_OPT__(, ) __VA_ARGS__, NULL)
+	slog_node_create(SLOG_TYPE_OBJECT, K, ##__VA_ARGS__, NULL)
 
 #define SLOG(LEVEL, MSG, ...)                                                  \
 	do {                                                                   \

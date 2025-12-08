@@ -89,6 +89,14 @@ void slog_node_free(struct slog_node *node) {
 
 typedef void (*slog_output_handler_t)(const char *);
 
+struct slog_buffer {
+	char *data;
+	size_t size;
+	size_t index;
+};
+
+static thread_local struct slog_buffer slog_buffer = {0};
+
 static thread_local slog_output_handler_t slog_output_handler;
 
 void SLOG_SET_HANDLER(slog_output_handler_t cb) {
@@ -105,14 +113,6 @@ void SLOG_FREE(void) {
 	slog_buffer.size = 0;
 	slog_buffer.index = 0;
 }
-
-struct slog_buffer {
-	char *data;
-	size_t size;
-	size_t index;
-};
-
-static thread_local struct slog_buffer slog_buffer = {0};
 
 static bool slog_buffer_reserve(size_t additional) {
 	const size_t needed = slog_buffer.index + additional + 1;
@@ -366,9 +366,13 @@ void slog_log_main(const char *file, const int line, const char *func,
 #define SLOG_FLOAT(K, V) slog_node_create(SLOG_TYPE_FLOAT, K, V)
 #define SLOG_STRING(K, V) slog_node_create(SLOG_TYPE_STRING, K, V)
 #define SLOG_INT(K, V) slog_node_create(SLOG_TYPE_INT, K, V)
-#define SLOG_ARRAY(K, ...) slog_node_create(SLOG_TYPE_ARRAY, K, ##__VA_ARGS__, NULL)
-#define SLOG_OBJECT(K, ...)                                                    \
+#define SLOG_ARRAY_IMPL(K, ...)                                                \
+	slog_node_create(SLOG_TYPE_ARRAY, K, ##__VA_ARGS__, NULL)
+#define SLOG_ARRAY(...) SLOG_ARRAY_IMPL(__VA_ARGS__)
+
+#define SLOG_OBJECT_IMPL(K, ...)                                               \
 	slog_node_create(SLOG_TYPE_OBJECT, K, ##__VA_ARGS__, NULL)
+#define SLOG_OBJECT(...) SLOG_OBJECT_IMPL(__VA_ARGS__)
 
 #define SLOG(LEVEL, MSG, ...)                                                  \
 	do {                                                                   \

@@ -11,6 +11,7 @@ void test_string(void) {
 	CU_ASSERT_PTR_NULL(node->next);
 
 	// free
+	slog_node_put(node);
 }
 
 int main(void) {

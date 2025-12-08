@@ -136,27 +136,27 @@ static bool slog_buffer_reserve(size_t additional) {
 	return true;
 }
 
-const char *slog_buffer_write(const char *fmt, ...) {
-	if (!fmt) {
-		if (!slog_buffer.data && !slog_buffer_reserve(0)) {
-			return NULL;
-		}
-		slog_buffer.data[slog_buffer.index] = '\0';
-		const char *buffer = slog_buffer.data;
-		slog_buffer.index = 0;
-		return buffer;
+static const char *slog_buffer_flush_and_reset(void) {
+	if (!slog_buffer.data && !slog_buffer_reserve(0)) {
+		return NULL;
 	}
+	slog_buffer.data[slog_buffer.index] = '\0';
+	const char *buffer = slog_buffer.data;
+	slog_buffer.index = 0;
+	return buffer;
+}
 
+static void slog_buffer_append_formatted(const char *fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
 	int len = vsnprintf(NULL, 0, fmt, args);
 	va_end(args);
 	if (len < 0) {
-		return NULL;
+		return;
 	}
 
 	if (!slog_buffer_reserve((size_t)len)) {
-		return NULL;
+		return;
 	}
 
 	va_start(args, fmt);
@@ -165,7 +165,6 @@ const char *slog_buffer_write(const char *fmt, ...) {
 	va_end(args);
 
 	slog_buffer.index += (size_t)len;
-	return NULL;
 }
 
 struct slog_node *slog_node_make_list(bool clear_keys, va_list ap) {
@@ -227,43 +226,43 @@ struct slog_node *slog_node_create(enum slog_type type, const char *key, ...) {
 void slog_write_escape(const char *str) {
 	assert(str);
 
-	slog_buffer_write("\"");
+	slog_buffer_append_formatted("\"");
 
 	for (const char *p = str; *p; p++) {
 		unsigned char c = *p;
 
 		switch (c) {
 		case '"':
-			slog_buffer_write("\\\"");
+			slog_buffer_append_formatted("\\\"");
 			break;
 		case '\\':
-			slog_buffer_write("\\\\");
+			slog_buffer_append_formatted("\\\\");
 			break;
 		case '\b':
-			slog_buffer_write("\\b");
+			slog_buffer_append_formatted("\\b");
 			break;
 		case '\f':
-			slog_buffer_write("\\f");
+			slog_buffer_append_formatted("\\f");
 			break;
 		case '\n':
-			slog_buffer_write("\\n");
+			slog_buffer_append_formatted("\\n");
 			break;
 		case '\r':
-			slog_buffer_write("\\r");
+			slog_buffer_append_formatted("\\r");
 			break;
 		case '\t':
-			slog_buffer_write("\\t");
+			slog_buffer_append_formatted("\\t");
 			break;
 		default:
 			if (c < 0x20) {
-				slog_buffer_write("\\u%04x", c);
+				slog_buffer_append_formatted("\\u%04x", c);
 			} else {
-				slog_buffer_write("%c", c);
+				slog_buffer_append_formatted("%c", c);
 			}
 			break;
 		}
 	}
-	slog_buffer_write("\"");
+	slog_buffer_append_formatted("\"");
 }
 
 void slog_write_time(struct timespec *ts) {
@@ -271,7 +270,7 @@ void slog_write_time(struct timespec *ts) {
 	struct tm tm;
 	localtime_r(&ts->tv_sec, &tm);
 	strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
-	slog_buffer_write("\"%s\"", buf);
+	slog_buffer_append_formatted("\"%s\"", buf);
 }
 
 void slog_write_node(struct slog_node *node) {
@@ -279,31 +278,31 @@ void slog_write_node(struct slog_node *node) {
 		struct slog_node *node_defer = node;
 		if (node->key) {
 			slog_write_escape(node->key);
-			slog_buffer_write(":");
+			slog_buffer_append_formatted(":");
 		}
 		switch (node->type) {
 		case SLOG_TYPE_STRING:
 			slog_write_escape(node->value.string);
 			break;
 		case SLOG_TYPE_BOOL:
-			slog_buffer_write("%s", node->value.boolean ? "true"
+			slog_buffer_append_formatted("%s", node->value.boolean ? "true"
 								    : "false");
 			break;
 		case SLOG_TYPE_INT:
-			slog_buffer_write("%lld", node->value.integer);
+			slog_buffer_append_formatted("%lld", node->value.integer);
 			break;
 		case SLOG_TYPE_FLOAT:
-			slog_buffer_write("%f", node->value.number);
+			slog_buffer_append_formatted("%f", node->value.number);
 			break;
 		case SLOG_TYPE_ARRAY:
-			slog_buffer_write("[");
+			slog_buffer_append_formatted("[");
 			slog_write_node(node->value.array);
-			slog_buffer_write("]");
+			slog_buffer_append_formatted("]");
 			break;
 		case SLOG_TYPE_OBJECT:
-			slog_buffer_write("{");
+			slog_buffer_append_formatted("{");
 			slog_write_node(node->value.object);
-			slog_buffer_write("}");
+			slog_buffer_append_formatted("}");
 			break;
 		case SLOG_TYPE_TIME:
 			slog_write_time(&node->value.time);
@@ -313,7 +312,7 @@ void slog_write_node(struct slog_node *node) {
 		}
 		node = node->next;
 		if (node) {
-			slog_buffer_write(",");
+			slog_buffer_append_formatted(",");
 		}
 		slog_node_put(node_defer);
 	}
@@ -345,12 +344,12 @@ void slog_log_main(const char *file, const int line, const char *func,
 		msg_node->next = extra_head;
 	}
 
-	if (!slog_buffer_write(NULL)) {
+	if (!slog_buffer_flush_and_reset()) {
 		fprintf(stderr, "Buffer reset failed\n");
 		return;
 	}
 	slog_write_node(root);
-	const char *buffer = slog_buffer_write(NULL);
+	const char *buffer = slog_buffer_flush_and_reset();
 	if (!buffer) {
 		fprintf(stderr, "Buffer flush failed\n");
 		return;

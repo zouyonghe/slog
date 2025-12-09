@@ -266,11 +266,10 @@ void slog_write_escape(const char *str) {
 }
 
 void slog_write_time(struct timespec *ts) {
-	char buf[32];
-	struct tm tm;
-	localtime_r(&ts->tv_sec, &tm);
-	strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
-	slog_buffer_append_formatted("\"%s\"", buf);
+	// unix timestamp in seconds.microseconds format (UTC agnostic)
+	// e.g. 1763456783.899468
+	slog_buffer_append_formatted("\"%ld.%06lu\"", ts->tv_sec,
+				     ts->tv_nsec / 1000);
 }
 
 void slog_write_node(struct slog_node *node) {

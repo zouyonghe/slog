@@ -115,6 +115,11 @@ void SLOG_FREE(void) {
 }
 
 static bool slog_buffer_reserve(size_t additional) {
+	if (slog_buffer.index > SIZE_MAX - 1 - additional) {
+		fprintf(stderr, "Buffer allocation failed: requested size overflows\n");
+		return false;
+	}
+
 	const size_t needed = slog_buffer.index + additional + 1;
 	if (needed <= slog_buffer.size) {
 		return true;
@@ -122,7 +127,11 @@ static bool slog_buffer_reserve(size_t additional) {
 
 	size_t new_size = slog_buffer.size ? slog_buffer.size : PIPE_BUF;
 	while (new_size < needed) {
-		new_size *= 2;
+		if (new_size > SIZE_MAX / 2) {
+			new_size = needed;
+		} else {
+			new_size *= 2;
+		}
 	}
 
 	char *new_data = realloc(slog_buffer.data, new_size);

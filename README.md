@@ -9,6 +9,7 @@ Structured logging library for C.
 - Thread-safe with memory pools
 - Multiple data types support
 - Auto escaping & timestamps
+- Log level filtering
 
 ## Tutorial
 
@@ -33,6 +34,10 @@ int main() {
             SLOG_OBJECT("profile",
                 SLOG_STRING("email", "qaq@qaq.land"),
                 SLOG_INT("id", 114514))));
+
+    // Minimum log level
+    SLOG_SET_LEVEL(SLOG_INFO);
+    SLOG(SLOG_DEBUG, "this will be filtered");
 
     SLOG_FREE();
     return 0;

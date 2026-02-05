@@ -15,8 +15,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <threads.h>
 #include <time.h>
+
+#if defined(__cplusplus)
+#define SLOG_THREAD_LOCAL thread_local
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define SLOG_THREAD_LOCAL _Thread_local
+#elif defined(_MSC_VER)
+#define SLOG_THREAD_LOCAL __declspec(thread)
+#else
+#define SLOG_THREAD_LOCAL __thread
+#endif
 
 enum slog_level {
 	SLOG_ERROR = 0,
@@ -56,7 +65,7 @@ struct slog_node {
 
 static const struct slog_node slog_node_default = {0};
 
-static thread_local struct slog_node *slog_node_thread_local = NULL;
+static SLOG_THREAD_LOCAL struct slog_node *slog_node_thread_local = NULL;
 
 struct slog_node *slog_node_get() {
 	struct slog_node *node;
@@ -95,23 +104,37 @@ struct slog_buffer {
 	size_t index;
 };
 
-static thread_local struct slog_buffer slog_buffer = {0};
+static SLOG_THREAD_LOCAL struct slog_buffer slog_buffer = {0};
 
-static thread_local slog_output_handler_t slog_output_handler;
+static SLOG_THREAD_LOCAL slog_output_handler_t slog_output_handler;
+static SLOG_THREAD_LOCAL enum slog_level slog_current_level = SLOG_DEBUG;
 
 void SLOG_SET_HANDLER(slog_output_handler_t cb) {
 	assert(cb);
 	slog_output_handler = cb;
 }
 
+void SLOG_SET_LEVEL(enum slog_level level) {
+	slog_current_level = level;
+}
+
+enum slog_level SLOG_GET_LEVEL(void) {
+	return slog_current_level;
+}
+
 void SLOG_FREE(void) {
 	slog_node_free(slog_node_thread_local);
 	slog_node_thread_local = NULL;
 	slog_output_handler = NULL;
+	slog_current_level = SLOG_DEBUG;
 	free(slog_buffer.data);
 	slog_buffer.data = NULL;
 	slog_buffer.size = 0;
 	slog_buffer.index = 0;
+}
+
+static inline bool slog_level_should_log(enum slog_level level) {
+	return level <= slog_current_level;
 }
 
 static bool slog_buffer_reserve(size_t additional) {
@@ -385,8 +408,10 @@ void slog_log_main(const char *file, const int line, const char *func,
 
 #define SLOG(LEVEL, MSG, ...)                                                  \
 	do {                                                                   \
-		slog_log_main(__FILE__, __LINE__, __func__, #LEVEL, MSG,       \
-			      ##__VA_ARGS__, NULL);                            \
+		if (slog_level_should_log(LEVEL)) {                          \
+			slog_log_main(__FILE__, __LINE__, __func__, #LEVEL,  \
+				      MSG, ##__VA_ARGS__, NULL);           \
+		}                                                              \
 	} while (0)
 
 #endif // SLOG_H

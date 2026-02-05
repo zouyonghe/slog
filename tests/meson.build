@@ -1,6 +1,10 @@
 test_sources = [
     'test_type.c',
     'test_buffer.c',
+    'test_node.c',
+    'test_handler.c',
+    'test_json.c',
+    'test_level.c',
 ]
 
 test_c_args = [
